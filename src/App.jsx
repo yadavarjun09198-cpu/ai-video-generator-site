@@ -1,3 +1,5 @@
+import VideoStudio from './VideoStudio.jsx';
+
 const navItems = ['Products', 'Solutions', 'Support', 'Pricing', 'Buy'];
 
 const stats = [
@@ -236,6 +238,7 @@ export default function App() {
             ))}
           </div>
         </section>
+        <VideoStudio />
       </main>
 
       <footer className="site-footer">
