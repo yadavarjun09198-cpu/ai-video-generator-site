@@ -4,6 +4,7 @@ const tools = [
   { id: 'voice', title: 'Voice to Video', accept: 'audio/*', description: 'Upload spoken audio for a talking-character workflow.' },
   { id: 'sound', title: 'Sound to Video', accept: 'audio/*', description: 'Upload music or sound to generate visuals.' },
   { id: 'image', title: 'Image to Video', accept: 'image/*', description: 'Upload a still image to animate it.' },
+  { id: 'video', title: 'Video to Video', accept: 'video/mp4,video/webm,video/quicktime', description: 'Experimental AI frame-by-frame restyling. Motion may flicker; original audio is not preserved.' },
 ];
 
 export default function VideoStudio() {
