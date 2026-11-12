@@ -1,0 +1,10 @@
+-r requirements.txt
+torch
+diffusers>=0.32,<0.38
+transformers>=4.44
+accelerate>=0.34
+safetensors
+sentencepiece
+Pillow
+imageio
+imageio-ffmpeg
