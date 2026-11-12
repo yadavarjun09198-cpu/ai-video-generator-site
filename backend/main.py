@@ -1,48 +1,92 @@
-"""AR's AI API: explicit GPU model adapters; never returns fake generated videos."""
+"""AR's AI API: real optional CogVideoX I2V, unavailable modes return 503."""
+import asyncio
 import os
 import tempfile
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from image_model import generate_image_video, gpu_ready
 
-app = FastAPI(title="AR's AI Video API", version="0.1.0")
+app = FastAPI(title="AR's AI Video API", version="0.2.0")
 origins = [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "").split(",") if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["*"])
 
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", tempfile.gettempdir())) / "ars_ai_outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_BYTES = 20 * 1024 * 1024
-ALLOWED_TYPES = {"voice": ("audio/",), "sound": ("audio/",), "image": ("image/",)}
+# Must explicitly opt in: GPU availability alone is not proof that model weights load.
+ENABLED = os.getenv("ENABLE_IMAGE_MODEL", "0") == "1"
+SEMAPHORE = asyncio.Semaphore(1)
 
 
-class Status(BaseModel):
-    available: bool
-    reason: str
+def image_ready():
+    return ENABLED and gpu_ready()
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "online", "gpu_generation": False, "reason": "No model adapters are installed or configured."}
+    return {"status": "online", "gpu_generation": image_ready(), "note": "GPU detection is not a successful inference test."}
 
 
 @app.get("/api/capabilities")
 def capabilities():
-    return {name: Status(available=False, reason="GPU model adapter not configured.").model_dump() for name in ALLOWED_TYPES}
+    return {
+        "voice": {"available": False, "reason": "Voice-to-video model not configured."},
+        "sound": {"available": False, "reason": "Sound-to-video model not configured."},
+        "image": {"available": image_ready(), "reason": "Model enabled and CUDA detected; first load/inference may still fail." if image_ready() else "Enable image model and attach a CUDA GPU."},
+    }
+
+
+@app.get("/api/videos/{video_id}")
+def video(video_id: uuid.UUID):
+    path = OUTPUT_DIR / f"{video_id}.mp4"
+    if not path.is_file():
+        raise HTTPException(404, "Video not found or runtime expired.")
+    return FileResponse(path, media_type="video/mp4", filename="ars-ai-video.mp4")
 
 
 @app.post("/api/generate/{mode}")
 async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("")):
-    if mode not in ALLOWED_TYPES:
+    if mode not in ("voice", "sound", "image"):
         raise HTTPException(404, "Unknown generation mode.")
-    if not file.content_type or not file.content_type.startswith(ALLOWED_TYPES[mode]):
-        raise HTTPException(415, "Unsupported source file type.")
+    if mode != "image":
+        raise HTTPException(503, f"{mode} AI model is not configured.")
+    if not image_ready():
+        raise HTTPException(503, "Image-to-video model is disabled or CUDA GPU unavailable.")
+    if file.content_type not in ("image/png", "image/jpeg", "image/webp"):
+        raise HTTPException(415, "Use PNG, JPEG or WebP.")
     if len(prompt) > 2000:
-        raise HTTPException(422, "Prompt must be 2000 characters or fewer.")
-    # Reject unavailable inference before accepting/retaining uploads.
-    raise HTTPException(
-        status_code=503,
-        detail=f"{mode} AI generation is not available: compatible GPU model adapter is not configured.",
-    )
+        raise HTTPException(422, "Prompt too long.")
+    raw = await file.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise HTTPException(413, "Image exceeds 20 MB.")
+    if not raw:
+        raise HTTPException(422, "Empty image.")
+    from PIL import Image, UnidentifiedImageError
+    import io
+    try:
+        with Image.open(io.BytesIO(raw)) as im:
+            im.verify()
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise HTTPException(422, "Invalid image content.")
+    # Return busy rather than queueing unbounded expensive requests.
+    if SEMAPHORE.locked():
+        raise HTTPException(429, "GPU is busy. Try again later.")
+    image_id = uuid.uuid4()
+    suffix = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[file.content_type]
+    input_path = OUTPUT_DIR / f"{image_id}{suffix}"
+    output_path = OUTPUT_DIR / f"{image_id}.mp4"
+    try:
+        async with SEMAPHORE:
+            await asyncio.to_thread(input_path.write_bytes, raw)
+            await asyncio.to_thread(generate_image_video, input_path, output_path, prompt)
+    except Exception as exc:
+        output_path.unlink(missing_ok=True)
+        # Avoid leaking internal paths/model credentials to public clients.
+        raise HTTPException(503, "Image-to-video inference failed; check server logs and GPU memory.") from exc
+    finally:
+        input_path.unlink(missing_ok=True)
+    return {"video_url": f"/api/videos/{image_id}"}
