@@ -9,6 +9,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from image_model import generate_image_video, gpu_ready
+from video_model import generate_video_video
 
 app = FastAPI(title="AR's AI Video API", version="0.2.0")
 origins = [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "").split(",") if x.strip()]
@@ -19,6 +20,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_BYTES = 20 * 1024 * 1024
 # Must explicitly opt in: GPU availability alone is not proof that model weights load.
 ENABLED = os.getenv("ENABLE_IMAGE_MODEL", "0") == "1"
+VIDEO_ENABLED = os.getenv("ENABLE_VIDEO_MODEL", "0") == "1"
 SEMAPHORE = asyncio.Semaphore(1)
 
 
@@ -36,6 +38,7 @@ def capabilities():
     return {
         "voice": {"available": False, "reason": "Voice-to-video model not configured."},
         "sound": {"available": False, "reason": "Sound-to-video model not configured."},
+        "video": {"available": VIDEO_ENABLED and gpu_ready(), "reason": "Experimental frame-wise stylization; model not load-tested." if VIDEO_ENABLED and gpu_ready() else "Enable video model and attach CUDA GPU."},
         "image": {"available": image_ready(), "reason": "Model enabled and CUDA detected; first load/inference may still fail." if image_ready() else "Enable image model and attach a CUDA GPU."},
     }
 
@@ -50,13 +53,17 @@ def video(video_id: uuid.UUID):
 
 @app.post("/api/generate/{mode}")
 async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("")):
-    if mode not in ("voice", "sound", "image"):
+    if mode not in ("voice", "sound", "image", "video"):
         raise HTTPException(404, "Unknown generation mode.")
-    if mode != "image":
+    if mode not in ("image", "video"):
         raise HTTPException(503, f"{mode} AI model is not configured.")
-    if not image_ready():
+    if mode == "image" and not image_ready():
         raise HTTPException(503, "Image-to-video model is disabled or CUDA GPU unavailable.")
-    if file.content_type not in ("image/png", "image/jpeg", "image/webp"):
+    if mode == "video" and not (VIDEO_ENABLED and gpu_ready()):
+        raise HTTPException(503, "Video-to-video model disabled or CUDA GPU unavailable.")
+    if mode == "video" and file.content_type not in ("video/mp4", "video/webm", "video/quicktime"):
+        raise HTTPException(415, "Use MP4, WebM or MOV.")
+    if mode == "image" and file.content_type not in ("image/png", "image/jpeg", "image/webp"):
         raise HTTPException(415, "Use PNG, JPEG or WebP.")
     if len(prompt) > 2000:
         raise HTTPException(422, "Prompt too long.")
@@ -67,26 +74,27 @@ async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("
         raise HTTPException(422, "Empty image.")
     from PIL import Image, UnidentifiedImageError
     import io
-    try:
-        with Image.open(io.BytesIO(raw)) as im:
-            im.verify()
-    except (UnidentifiedImageError, OSError, ValueError):
-        raise HTTPException(422, "Invalid image content.")
+    if mode == "image":
+        try:
+            with Image.open(io.BytesIO(raw)) as im:
+                im.verify()
+        except (UnidentifiedImageError, OSError, ValueError):
+            raise HTTPException(422, "Invalid image content.")
     # Return busy rather than queueing unbounded expensive requests.
     if SEMAPHORE.locked():
         raise HTTPException(429, "GPU is busy. Try again later.")
     image_id = uuid.uuid4()
-    suffix = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[file.content_type]
+    suffix = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov"}[file.content_type]
     input_path = OUTPUT_DIR / f"{image_id}{suffix}"
     output_path = OUTPUT_DIR / f"{image_id}.mp4"
     try:
         async with SEMAPHORE:
             await asyncio.to_thread(input_path.write_bytes, raw)
-            await asyncio.to_thread(generate_image_video, input_path, output_path, prompt)
+            await asyncio.to_thread(generate_image_video if mode == "image" else generate_video_video, input_path, output_path, prompt)
     except Exception as exc:
         output_path.unlink(missing_ok=True)
         # Avoid leaking internal paths/model credentials to public clients.
-        raise HTTPException(503, "Image-to-video inference failed; check server logs and GPU memory.") from exc
+        raise HTTPException(503, "AI video inference failed; check server logs and GPU memory.") from exc
     finally:
         input_path.unlink(missing_ok=True)
     return {"video_url": f"/api/videos/{image_id}"}
