@@ -8,3 +8,4 @@ sentencepiece
 Pillow
 imageio
 imageio-ffmpeg
+opencv-python-headless>=4.8,<5
