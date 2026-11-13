@@ -24,6 +24,8 @@ MAX_BYTES = 20 * 1024 * 1024
 ENABLED = os.getenv("ENABLE_IMAGE_MODEL", "0") == "1"
 VIDEO_ENABLED = os.getenv("ENABLE_VIDEO_MODEL", "0") == "1"
 SEMAPHORE = asyncio.Semaphore(1)
+# Fail closed: billable Magic Hour cannot run until explicitly enabled on server.
+PAID_GENERATION_ALLOWED = os.getenv("ALLOW_PAID_GENERATION", "0") == "1"
 
 
 def image_ready():
@@ -41,7 +43,7 @@ def capabilities():
         "voice": {"available": False, "reason": "Voice-to-video model not configured."},
         "sound": {"available": False, "reason": "Sound-to-video model not configured."},
         "video": {"available": (hf_configured("video") or (VIDEO_ENABLED and gpu_ready())), "reason": "Provider configuration detected; generation untested." if VIDEO_ENABLED and gpu_ready() else "Enable video model and attach CUDA GPU."},
-        "image": {"available": (magic_configured() or hf_configured("image") or image_ready()), "reason": "Configuration detected; Hugging Face endpoint and inference untested." if image_ready() else "Enable image model and attach a CUDA GPU."},
+        "image": {"available": ((magic_configured() and PAID_GENERATION_ALLOWED) or hf_configured("image") or image_ready()), "reason": "Configuration detected; Hugging Face endpoint and inference untested." if image_ready() else "Enable image model and attach a CUDA GPU."},
     }
 
 
@@ -59,7 +61,7 @@ async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("
         raise HTTPException(404, "Unknown generation mode.")
     if mode not in ("image", "video"):
         raise HTTPException(503, f"{mode} AI model is not configured.")
-    if mode == "image" and not (image_ready() or hf_configured("image") or magic_configured()):
+    if mode == "image" and not (image_ready() or hf_configured("image") or (magic_configured() and PAID_GENERATION_ALLOWED)):
         raise HTTPException(503, "Image-to-video model is disabled or CUDA GPU unavailable.")
     if mode == "video" and not (hf_configured("video") or (VIDEO_ENABLED and gpu_ready())):
         raise HTTPException(503, "Video-to-video model disabled or CUDA GPU unavailable.")
@@ -92,10 +94,10 @@ async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("
     try:
         async with SEMAPHORE:
             await asyncio.to_thread(input_path.write_bytes, raw)
-            if mode == "image" and magic_configured():
-                await asyncio.to_thread(generate_magic_video, mode, input_path, output_path, prompt)
-            elif hf_configured(mode):
+            if hf_configured(mode):
                 await asyncio.to_thread(generate_hf_video, mode, input_path, output_path, prompt)
+            elif mode == "image" and magic_configured() and PAID_GENERATION_ALLOWED:
+                await asyncio.to_thread(generate_magic_video, mode, input_path, output_path, prompt)
             else:
                 await asyncio.to_thread(generate_image_video if mode == "image" else generate_video_video, input_path, output_path, prompt)
     except Exception as exc:
