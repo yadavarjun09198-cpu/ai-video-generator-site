@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const tools = [
   { id: 'voice', title: 'Voice to Video', accept: 'audio/*', description: 'Upload spoken audio for a talking-character workflow.' },
@@ -49,7 +49,7 @@ export default function VideoStudio({ initialMode = 'image' }) {
   const filter = filters.find((item) => item.id === filterId);
   const soundtrack = soundtracks.find((item) => item.id === soundtrackId);
   const apiUrl = (import.meta.env.VITE_VIDEO_API_URL || '').replace(/\/$/, '');
-  const previewUrl = file ? URL.createObjectURL(file) : '';
+  const previewUrl = useMemo(() => file ? URL.createObjectURL(file) : '', [file]);
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
   useEffect(() => {
