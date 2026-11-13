@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from image_model import generate_image_video, gpu_ready
 from video_model import generate_video_video
+from hf_space import configured as hf_configured, generate_hf_video
 
 app = FastAPI(title="AR's AI Video API", version="0.2.0")
 origins = [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "").split(",") if x.strip()]
@@ -38,8 +39,8 @@ def capabilities():
     return {
         "voice": {"available": False, "reason": "Voice-to-video model not configured."},
         "sound": {"available": False, "reason": "Sound-to-video model not configured."},
-        "video": {"available": VIDEO_ENABLED and gpu_ready(), "reason": "Experimental frame-wise stylization; model not load-tested." if VIDEO_ENABLED and gpu_ready() else "Enable video model and attach CUDA GPU."},
-        "image": {"available": image_ready(), "reason": "Model enabled and CUDA detected; first load/inference may still fail." if image_ready() else "Enable image model and attach a CUDA GPU."},
+        "video": {"available": (hf_configured("video") or (VIDEO_ENABLED and gpu_ready())), "reason": "Configuration detected; Hugging Face endpoint and inference untested." if VIDEO_ENABLED and gpu_ready() else "Enable video model and attach CUDA GPU."},
+        "image": {"available": (hf_configured("image") or image_ready()), "reason": "Configuration detected; Hugging Face endpoint and inference untested." if image_ready() else "Enable image model and attach a CUDA GPU."},
     }
 
 
@@ -57,9 +58,9 @@ async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("
         raise HTTPException(404, "Unknown generation mode.")
     if mode not in ("image", "video"):
         raise HTTPException(503, f"{mode} AI model is not configured.")
-    if mode == "image" and not image_ready():
+    if mode == "image" and not (image_ready() or hf_configured("image")):
         raise HTTPException(503, "Image-to-video model is disabled or CUDA GPU unavailable.")
-    if mode == "video" and not (VIDEO_ENABLED and gpu_ready()):
+    if mode == "video" and not (hf_configured("video") or (VIDEO_ENABLED and gpu_ready())):
         raise HTTPException(503, "Video-to-video model disabled or CUDA GPU unavailable.")
     if mode == "video" and file.content_type not in ("video/mp4", "video/webm", "video/quicktime"):
         raise HTTPException(415, "Use MP4, WebM or MOV.")
@@ -90,7 +91,10 @@ async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("
     try:
         async with SEMAPHORE:
             await asyncio.to_thread(input_path.write_bytes, raw)
-            await asyncio.to_thread(generate_image_video if mode == "image" else generate_video_video, input_path, output_path, prompt)
+            if hf_configured(mode):
+                await asyncio.to_thread(generate_hf_video, mode, input_path, output_path, prompt)
+            else:
+                await asyncio.to_thread(generate_image_video if mode == "image" else generate_video_video, input_path, output_path, prompt)
     except Exception as exc:
         output_path.unlink(missing_ok=True)
         # Avoid leaking internal paths/model credentials to public clients.
