@@ -1,7 +1,4 @@
-import { useState } from 'react';
-
 export default function EarnCredits() {
-  const [message, setMessage] = useState('');
   return (
     <section id="earn-credits" style={{ padding: '52px 5%', background: '#0b1220', color: '#fff' }}>
       <div style={{ maxWidth: 900, margin: 'auto', background: '#1e293b', padding: 24, borderRadius: 16, border: '1px solid #334155' }}>
@@ -24,7 +21,7 @@ export default function EarnCredits() {
         <button type="button" disabled style={{ background: '#475569', color: '#fff', border: 0, padding: '12px 20px', borderRadius: 9, marginTop: 16, cursor: 'not-allowed' }}>
           Watch Ad &amp; Earn Credits (Coming Soon)
         </button>
-        <p role="status" style={{ color: '#fbbf24', marginTop: 12 }}>{message || 'Credits will only be awarded after server-side verification of a completed rewarded ad. No credits can be earned yet.'}</p>
+        <p role="status" style={{ color: '#fbbf24', marginTop: 12 }}>Credits will only be awarded after server-side verification of a completed rewarded ad. No credits can be earned yet.</p>
       </div>
     </section>
   );
