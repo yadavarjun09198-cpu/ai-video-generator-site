@@ -4,3 +4,4 @@ python-multipart>=0.0.9,<1
 pydantic>=2,<3
 gradio_client>=1.5,<3
 Pillow>=10,<13
+magic_hour>=0.1
