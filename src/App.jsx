@@ -1,4 +1,5 @@
 import VideoStudio from './VideoStudio.jsx';
+import EarnCredits from './EarnCredits.jsx';
 
 const navItems = ['Products', 'Solutions', 'Support', 'Pricing', 'Buy'];
 
@@ -239,6 +240,7 @@ export default function App() {
           </div>
         </section>
         <VideoStudio />
+        <EarnCredits />
       </main>
 
       <footer className="site-footer">
