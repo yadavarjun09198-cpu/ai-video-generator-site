@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const tools = [
   { id: 'voice', title: 'Voice to Video', accept: 'audio/*', description: 'Upload spoken audio for a talking-character workflow.' },
@@ -7,8 +7,9 @@ const tools = [
   { id: 'video', title: 'Video to Video', accept: 'video/mp4,video/webm,video/quicktime', description: 'Experimental AI frame-by-frame restyling. Motion may flicker; original audio is not preserved.' },
 ];
 
-export default function VideoStudio() {
-  const [mode, setMode] = useState('image');
+export default function VideoStudio({ initialMode = 'image' }) {
+  const [mode, setMode] = useState(initialMode);
+  useEffect(() => { if (['image','video','sound','voice'].includes(initialMode)) { setMode(initialMode); setFile(null); setVideoUrl(''); setStatus(''); } }, [initialMode]);
   const [file, setFile] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState('');
