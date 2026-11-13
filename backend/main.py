@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from image_model import generate_image_video, gpu_ready
 from video_model import generate_video_video
 from hf_space import configured as hf_configured, generate_hf_video
-from magic_hour import configured as magic_configured, generate_magic_video
+from magic_hour_adapter import configured as magic_configured, generate_magic_video
 
 app = FastAPI(title="AR's AI Video API", version="0.2.0")
 origins = [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "").split(",") if x.strip()]
