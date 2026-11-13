@@ -1,5 +1,6 @@
 import VideoStudio from './VideoStudio.jsx';
 import EarnCredits from './EarnCredits.jsx';
+import AdPlacements from './AdPlacements.jsx';
 
 const navItems = ['Products', 'Solutions', 'Support', 'Pricing', 'Buy'];
 
@@ -146,6 +147,7 @@ export default function App() {
           </div>
         </section>
 
+        <AdPlacements format="banner" />
         <section className="stats-strip">
           {stats.map((item) => (
             <div key={item.label} className="stat-item">
@@ -172,6 +174,7 @@ export default function App() {
           </div>
         </section>
 
+        <AdPlacements format="native" />
         <section className="solutions-panel">
           <div className="solutions-copy">
             <span className="eyebrow alt">Built for real-world teams</span>
