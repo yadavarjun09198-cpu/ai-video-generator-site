@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import VideoStudio from './VideoStudio.jsx';
 import EarnCredits from './EarnCredits.jsx';
+import ToolsLibrary from './ToolsLibrary.jsx';
+import './tools-library.css';
 import AdPlacements from './AdPlacements.jsx';
 
 const modes = [
@@ -30,6 +32,7 @@ export default function App() {
           <a href="#home" className="ar-nav-active">✧ Generate</a>
           <a href="#ai-video-studio">✿ AI Tools</a>
           <a href="#about">▣ About</a>
+          <a href="#tools-library">✧ Tools Library</a>
           <a href="#earn-credits">◉ Earn Credits</a>
         </nav>
         <span className="ar-free-label">✦ Free-first Studio</span>
@@ -62,6 +65,7 @@ export default function App() {
         <AdPlacements format="banner"/>
         <VideoStudio initialMode={selected === 'text' ? 'image' : selected}/>
         <AdPlacements format="native"/>
+        <ToolsLibrary/>
         <EarnCredits/>
       </main>
       <footer className="ar-footer"><strong>▶ AR's AI Studio</strong><span>Independent creative project · Video generation depends on available model and GPU providers</span></footer>
