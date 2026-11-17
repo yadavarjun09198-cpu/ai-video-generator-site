@@ -144,13 +144,6 @@ def main():
     scene.view_settings.view_transform = "AgX"
     scene.render.film_transparent = False
 
-    # Smooth motion between keys.
-    for obj in (text_obj, *orbiters):
-        if obj.animation_data and obj.animation_data.action:
-            for curve in obj.animation_data.action.fcurves:
-                for key in curve.keyframe_points:
-                    key.interpolation = "BEZIER"
-
     scene.frame_set(1)
     bpy.ops.render.render(animation=True)
     if not output_path.exists() or output_path.stat().st_size < 1024:
