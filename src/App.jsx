@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import VideoStudio from './VideoStudio.jsx';
+import BlenderStudio from './BlenderStudio.jsx';
+import './blender.css';
 import EarnCredits from './EarnCredits.jsx';
 import AdPlacements from './AdPlacements.jsx';
 
@@ -60,6 +62,7 @@ export default function App() {
         <div className="ar-studio-heading" id="about"><div><span>✦ AR'S AI VIDEO STUDIO</span><h2>Your ideas. Your cinematic world.</h2><p>Upload your source, describe your scene, then generate when an AI model is connected.</p></div><a href="#ai-video-studio">Open Studio <b>↗</b></a></div>
         <div className="ar-feature-row"><span><b>✦</b> Cinematic Motion</span><span><b>◇</b> Creative Video Effects</span><span><b>◈</b> AI Animation</span><span><b>⚡</b> GPU Powered (when connected)</span></div>
         <AdPlacements format="banner"/>
+        <BlenderStudio/>
         <VideoStudio initialMode={selected === 'text' ? 'image' : selected}/>
         <AdPlacements format="native"/>
         <EarnCredits/>
