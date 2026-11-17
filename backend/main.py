@@ -1,4 +1,4 @@
-"""AR's AI API: real optional CogVideoX I2V, unavailable modes return 503."""
+"""AR's AI API: optional GPU adapters plus local Blender procedural 3D rendering."""
 import asyncio
 import os
 import tempfile
@@ -8,24 +8,31 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from image_model import generate_image_video, gpu_ready
 from video_model import generate_video_video
 from hf_space import configured as hf_configured, generate_hf_video
 from magic_hour_adapter import configured as magic_configured, generate_magic_video
+from blender_model import blender_binary, render_title
 
-app = FastAPI(title="AR's AI Video API", version="0.2.0")
+app = FastAPI(title="AR's AI Video API", version="0.3.0")
 origins = [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "").split(",") if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["*"])
 
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", tempfile.gettempdir())) / "ars_ai_outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_BYTES = 20 * 1024 * 1024
-# Must explicitly opt in: GPU availability alone is not proof that model weights load.
 ENABLED = os.getenv("ENABLE_IMAGE_MODEL", "0") == "1"
 VIDEO_ENABLED = os.getenv("ENABLE_VIDEO_MODEL", "0") == "1"
 SEMAPHORE = asyncio.Semaphore(1)
-# Fail closed: billable Magic Hour cannot run until explicitly enabled on server.
+BLENDER_SEMAPHORE = asyncio.Semaphore(1)
 PAID_GENERATION_ALLOWED = os.getenv("ALLOW_PAID_GENERATION", "0") == "1"
+
+
+class BlenderRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=64)
+    style: str = Field(default="cosmic", pattern="^(cosmic|gold|emerald)$")
+    duration_seconds: int = Field(default=5, ge=5, le=8)
 
 
 def image_ready():
@@ -34,7 +41,8 @@ def image_ready():
 
 @app.get("/api/health")
 def health():
-    return {"status": "online", "gpu_generation": image_ready(), "note": "GPU detection is not a successful inference test."}
+    return {"status": "online", "gpu_generation": image_ready(), "blender": bool(blender_binary()),
+            "note": "GPU detection is not a successful inference test."}
 
 
 @app.get("/api/capabilities")
@@ -43,7 +51,8 @@ def capabilities():
         "voice": {"available": False, "reason": "Voice-to-video model not configured."},
         "sound": {"available": False, "reason": "Sound-to-video model not configured."},
         "video": {"available": (hf_configured("video") or (VIDEO_ENABLED and gpu_ready())), "reason": "Provider configuration detected; generation untested." if VIDEO_ENABLED and gpu_ready() else "Enable video model and attach CUDA GPU."},
-        "image": {"available": ((magic_configured() and PAID_GENERATION_ALLOWED) or hf_configured("image") or image_ready()), "reason": "Configuration detected; Hugging Face endpoint and inference untested." if image_ready() else "Enable image model and attach a CUDA GPU."},
+        "image": {"available": ((magic_configured() and PAID_GENERATION_ALLOWED) or hf_configured("image") or image_ready()), "reason": "Configuration detected; inference untested." if image_ready() else "Enable image model and attach a CUDA GPU."},
+        "blender_3d": {"available": bool(blender_binary()), "reason": "Install Blender and set BLENDER_BIN to enable local 3D rendering."},
     }
 
 
@@ -53,6 +62,29 @@ def video(video_id: uuid.UUID):
     if not path.is_file():
         raise HTTPException(404, "Video not found or runtime expired.")
     return FileResponse(path, media_type="video/mp4", filename="ars-ai-video.mp4")
+
+
+@app.post("/api/generate/blender")
+async def generate_blender_video(request: BlenderRequest):
+    if not blender_binary():
+        raise HTTPException(503, "Blender not found. Install Blender and set BLENDER_BIN in the backend environment.")
+    if BLENDER_SEMAPHORE.locked():
+        raise HTTPException(429, "Blender is already rendering another 3D video. Try again later.")
+    video_id = uuid.uuid4()
+    output_path = OUTPUT_DIR / f"{video_id}.mp4"
+    try:
+        async with BLENDER_SEMAPHORE:
+            await asyncio.to_thread(render_title, request.title.strip(), request.style,
+                                    request.duration_seconds, output_path)
+    except Exception as exc:
+        output_path.unlink(missing_ok=True)
+        message = str(exc)
+        if "timed out" in message.lower():
+            raise HTTPException(504, "Blender render exceeded the 15-minute limit.") from exc
+        # Keep server internals out of a public response; full details remain in backend logs.
+        print(f"Blender render error: {message}")
+        raise HTTPException(503, "Blender could not render the video. Check the backend terminal log.") from exc
+    return {"video_url": f"/api/videos/{video_id}"}
 
 
 @app.post("/api/generate/{mode}")
@@ -75,7 +107,7 @@ async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("
     if len(raw) > MAX_BYTES:
         raise HTTPException(413, "Image exceeds 20 MB.")
     if not raw:
-        raise HTTPException(422, "Empty image.")
+        raise HTTPException(422, "Empty source file.")
     from PIL import Image, UnidentifiedImageError
     import io
     if mode == "image":
@@ -84,13 +116,13 @@ async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("
                 im.verify()
         except (UnidentifiedImageError, OSError, ValueError):
             raise HTTPException(422, "Invalid image content.")
-    # Return busy rather than queueing unbounded expensive requests.
     if SEMAPHORE.locked():
         raise HTTPException(429, "GPU is busy. Try again later.")
-    image_id = uuid.uuid4()
-    suffix = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov"}[file.content_type]
-    input_path = OUTPUT_DIR / f"{image_id}{suffix}"
-    output_path = OUTPUT_DIR / f"{image_id}.mp4"
+    file_id = uuid.uuid4()
+    suffix = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp",
+               "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov" }[file.content_type]
+    input_path = OUTPUT_DIR / f"{file_id}{suffix}"
+    output_path = OUTPUT_DIR / f"{file_id}.mp4"
     try:
         async with SEMAPHORE:
             await asyncio.to_thread(input_path.write_bytes, raw)
@@ -102,8 +134,7 @@ async def generate(mode: str, file: UploadFile = File(...), prompt: str = Form("
                 await asyncio.to_thread(generate_image_video if mode == "image" else generate_video_video, input_path, output_path, prompt)
     except Exception as exc:
         output_path.unlink(missing_ok=True)
-        # Avoid leaking internal paths/model credentials to public clients.
         raise HTTPException(503, "AI video inference failed; check server logs and GPU memory.") from exc
     finally:
         input_path.unlink(missing_ok=True)
-    return {"video_url": f"/api/videos/{image_id}"}
+    return {"video_url": f"/api/videos/{file_id}"}
