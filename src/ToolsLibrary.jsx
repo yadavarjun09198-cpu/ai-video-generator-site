@@ -24,15 +24,15 @@ const groups = [
   { name: 'Image Tools', tools: [
     ['Image Invert','Invert image colors in your browser.','browser'],['Image Grayscale','Convert image to grayscale.','browser'],
     ['Image Black White','Convert image to high-contrast black and white.','browser'],['Image Flip','Flip image horizontally or vertically.','browser'],
-    ['Image Blur','Apply a blur in your browser.','browser'],['Face Blur','Blur faces using detection.'],
+    ['Image Blur','Apply a blur in your browser.','browser'],['Face Blur','Blur faces using detection.','service'],
     ['Image Resizer','Resize and export an image.','browser'],['Image HSL','Adjust hue, saturation and lightness.','browser'],
     ['Image Splitter','Split an image into a grid.','browser'],['Image Outline','Create a simple edge outline.','browser'],
-    ['Background Blur','Blur the background with subject detection.'],['Color Palette','Extract a small palette from an image.','browser'],
+    ['Background Blur','Blur the background with subject detection.','service'],['Color Palette','Extract a small palette from an image.','browser'],
     ['Image Combiner','Combine two images side by side.','browser']
   ]},
   { name: 'File Compressors', tools: [
-    ['Video Compressor','Compress a video with quality control.'],['PDF Compressor','Reduce PDF file size.'],
-    ['Word Compressor','Reduce Word document size.'],['GIF Compressor','Optimize a GIF.'],['PPT Compressor','Reduce PowerPoint file size.']
+    ['Video Compressor','Compress a video with quality control.','service'],['PDF Compressor','Reduce PDF file size.','service'],
+    ['Word Compressor','Reduce Word document size.','service'],['GIF Compressor','Optimize a GIF.','service'],['PPT Compressor','Reduce PowerPoint file size.','service']
   ]},
   { name: 'Emoji Tools', tools: [
     ['Emoji Copy','Browse and copy emojis.','text'],['Kawaii Face','Copy a cute kaomoji.','text'],
@@ -170,6 +170,7 @@ export default function ToolsLibrary() {
         <div className="tal-chips">{outputs.map((value,i)=><button type="button" key={i} onClick={async()=>{try{await navigator.clipboard.writeText(value);setStatus('Copied: '+value)}catch{setStatus(value)}}}>{value}</button>)}</div>
       </div>;
     }
+    if (active.kind === 'service') return <div className="tal-api-note">Is tool ko chalane ke liye dedicated processor/library aur backend route chahiye. Yeh abhi connect nahi hai.</div>;
     if (active.kind !== 'browser') return <div className="tal-api-note">Yeh AI feature abhi connect nahi hai. Isse chalane ke liye provider API ya local model, backend endpoint aur zaroori credentials chahiye.</div>;
     return <div className="tal-util">
       <label>Main image<input type="file" accept="image/*" onChange={e=>chooseImage(e)}/></label>
@@ -190,7 +191,7 @@ export default function ToolsLibrary() {
     <header className="tal-header"><div><span>AR'S AI · TOOL LIBRARY</span><h2>Creative tools, all in one place</h2><p>AI tools need a connected model. Browser tools process files on your device.</p></div><input className="tal-search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search tools..."/></header>
     <nav className="tal-categories"><button className={groupName==='All tools'?'active':''} onClick={()=>setGroupName('All tools')}>All tools</button>{groups.map(g=><button key={g.name} className={groupName===g.name?'active':''} onClick={()=>setGroupName(g.name)}>{g.name}</button>)}</nav>
     <div className="tal-layout">
-      <div className="tal-grid">{visible.map(tool=><button type="button" key={tool.name} onClick={()=>choose(tool)} className={'tal-card'+(active?.name===tool.name?' active':'')}><span>{tool.kind==='browser'?'🖼️':tool.kind==='text'?'✦':'✧'}</span><strong>{tool.name}</strong><small>{tool.description}</small><em>{tool.kind==='browser'?'Runs in browser':tool.kind==='text'?'Copy tool':'Model required'}</em></button>)}</div>
+      <div className="tal-grid">{visible.map(tool=><button type="button" key={tool.name} onClick={()=>choose(tool)} className={'tal-card'+(active?.name===tool.name?' active':'')}><span>{tool.kind==='browser'?'🖼️':tool.kind==='text'?'✦':'✧'}</span><strong>{tool.name}</strong><small>{tool.description}</small><em>{tool.kind==='browser'?'Runs in browser':tool.kind==='text'?'Copy tool':tool.kind==='service'?'Processor needed':'Model required'}</em></button>)}</div>
       <aside className="tal-workspace">{active?<><div className="tal-work-title"><div><small>{active.group}</small><h3>{active.name}</h3><p>{active.description}</p></div><button type="button" onClick={()=>{setActive(null);setStatus('')}} aria-label="Close tool">×</button></div>{renderUtility()}<p role="status" className="tal-status">{status}</p></>:<div className="tal-empty"><b>Tool workspace</b><p>Upar se koi tool chunein. Browser tools yahin run honge.</p></div>}</aside>
     </div>
   </section>;
